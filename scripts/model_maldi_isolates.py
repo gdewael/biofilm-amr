@@ -1,0 +1,172 @@
+import sys
+import torch
+torch.set_num_threads(4)
+import argparse
+from utils import *
+import pandas as pd
+import numpy as np
+import json
+from sklearn.model_selection import LeaveOneGroupOut
+import seaborn as sns
+import matplotlib.pyplot as plt
+import math
+
+def boolean(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
+    
+def read_data(path):
+    dataframe = pd.read_csv(path,index_col=0)
+    groups = dataframe.index
+    X = dataframe.iloc[:, :-1]
+    y = dataframe.iloc[:, [-1]]
+    return X, y, groups
+
+
+def weights_plot(weights, X):
+    fig, axes = plt.subplots(1, 1, figsize=np.array((5,11)))
+
+    t = np.argsort(weights.mean(0))
+    t = np.concatenate([t[:10], t[-10:]])[::-1]
+    weights_filt = weights[:, t]
+
+    sns.barplot(data = list(weights_filt.T), orient = "h", ax = axes, errorbar="sd")
+    axes.set_ylabel('Feature')
+    axes.set_xlabel('Weight')
+    axes.set_yticklabels(X.columns[t])
+    return fig, axes
+
+
+def preds_plot(y_trues, y_preds, param_grid, sample_names):
+    rows = math.ceil(len(y_trues) / 10)
+    cols = 10
+    fig, axes = plt.subplots(rows, cols, sharey = True, sharex = True, figsize=np.array((30,6 + 6*rows/5)))
+
+    n_ = y_preds.shape[1]
+
+    palette = sns.color_palette("rocket", n_colors=n_)[::-1]
+    c = 0
+    for i in range(len(y_trues)):
+        barlist = axes[c // 10, c % 10].bar(np.arange(n_), y_preds[i,:])
+        
+        axes[c // 10, c % 10].set_xticks(np.arange(n_))
+        axes[c // 10, c % 10].set_xticklabels(param_grid["all_labels"][0], rotation=45, ha='right')
+        axes[c // 10, c % 10].set_ylabel('Probability')
+        axes[c // 10, c % 10].set_xlabel('MIC')
+        axes[c // 10, c % 10].set_title(sample_names[i] + "\n" + 'True label: ' +  str(y_trues[i]))
+        axes[c // 10, c % 10].xaxis.set_tick_params(labelbottom=True)
+        axes[c // 10, c % 10].yaxis.set_tick_params(labelleft=True)
+        axes[c // 10, c % 10]
+        location_true = np.where(param_grid["all_labels"][0] == y_trues[i])[0][0]
+        distances_from_true = [np.abs(i - location_true) for i in range(len(param_grid["all_labels"][0]))]
+        
+        for k in range(len(param_grid["all_labels"][0])):
+            barlist[k].set_color(palette[distances_from_true[k]])
+        
+        c += 1 
+    return fig, axes
+
+
+def main():
+    class CustomFormatter(
+        argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter
+    ):
+        pass
+
+    parser = argparse.ArgumentParser(
+        description="Script for training ordinal regression models on preprocessed MALDI-TOF mass spectra (LOOCV)",
+        formatter_class=CustomFormatter,
+    )
+
+    parser.add_argument("data_path", type=str, metavar="data_path", help="path to data file")
+    parser.add_argument("isolates_data_path", type=str, metavar="isolates_data_path", help="path to isolates data file")
+    parser.add_argument(
+        "--save_preds_path_prefix",
+        type=str,
+        default="",
+        help="Prefix path for the file to save preds.csv to. Default \'\', which means don't save"
+    )
+
+
+    args = parser.parse_args()
+
+    X, y, groups = read_data(args.data_path)
+
+    X_isolates, y_isolates, groups_isolates = read_data(args.isolates_data_path)
+
+    groups_CV = split_groups_CV(
+        groups,
+        ["Lineage", "Strain"],
+        ["Lineage", "Treatment", "Strain"],
+        print_ = True
+    )
+
+    param_grid = {
+        "lr": [1, 0.5, 0.1],
+        "epochs": [250, 750],
+        "l2": [1e-3, 1e-4],
+        "all_labels":  [2**np.arange(np.log2(y.min().item()), np.log2(y.max().item()+1))]
+    }
+
+    y_trues = []
+    y_preds = []
+    sample_names = []
+
+    model, _, _ = Tune(OrdinalModel, param_grid, X, y, groups)
+
+    all_labels = 2**np.arange(np.log2(y.min().item()), np.log2(y.max().item()+1))
+    throwaway = np.isin(y_isolates, all_labels).reshape(-1)
+    y_isolates = y_isolates.iloc[throwaway]
+    X_isolates = X_isolates.iloc[throwaway]
+    groups_isolates = groups_isolates[throwaway]
+
+    y_trues = []
+    y_preds = []
+    sample_names = []
+    for i in np.unique(groups_isolates):
+        pred = model.predict(X_isolates.iloc[groups_isolates == i]).mean(0)
+        true = y_isolates.values.reshape(-1)[groups_isolates == i][0]
+
+        y_preds.append(pred)
+        y_trues.append(true)
+        sample_names.append(i)
+
+    y_trues = np.stack(y_trues)
+    y_preds = np.array(y_preds)
+    sample_names = np.array(sample_names)
+
+
+    print("Acc              : %.4f" % accuracy(y_trues, y_preds, possible_labels = param_grid["all_labels"][0]))
+    print("Acc(+-1)         : %.4f" % accuracy_plus_minus(y_trues, y_preds, possible_labels = param_grid["all_labels"][0]))
+    print("C-ix             : %.4f" % concordance(y_trues, y_preds, possible_labels = param_grid["all_labels"][0]))
+    print("C-ix(+-1)        : %.4f" % concordance_plus_minus(y_trues, y_preds, possible_labels = param_grid["all_labels"][0]))
+    print()
+
+    random_preds = np.zeros(param_grid["all_labels"][0].shape)
+    ys = y.values.reshape(-1)
+    random_preds[np.isin(param_grid["all_labels"][0], np.unique(ys))] = (np.unique(ys, return_counts = True)[1] / len(ys))
+    random_preds = random_preds.reshape(1, -1).repeat(len(y_trues), axis = 0)
+
+    print("Random Acc       : %.4f" % accuracy(y_trues, random_preds, possible_labels = param_grid["all_labels"][0]))
+    print("Random Acc(+-1)  : %.4f" % accuracy_plus_minus(y_trues, random_preds, possible_labels = param_grid["all_labels"][0]))
+    print("Random C-ix      : %.4f" % 0.5)
+    print("Random C-ix(+-1) : %.4f" % 0.5)
+
+    if args.save_preds_path_prefix != "":
+        predictions_dataframe = pd.DataFrame(
+            np.concatenate([y_trues.reshape(-1, 1), np.round(y_preds, 5)], axis = 1),
+            columns = ["True label"] + ["Probability class " + str(i) for i in range(y_preds.shape[1])],
+            index = sample_names
+            )
+        predictions_dataframe.to_csv(args.save_preds_path_prefix + "predictions.csv")
+
+
+
+if __name__ == "__main__":
+    main()
