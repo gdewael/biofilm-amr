@@ -1,0 +1,9 @@
+numpy
+pandas
+scikit-learn
+torch
+spacecutter
+skorch
+matplotlib
+seaborn
+
