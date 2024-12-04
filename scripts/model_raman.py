@@ -1,25 +1,13 @@
-import sys
 import torch
 torch.set_num_threads(4)
 import argparse
 from utils import *
 import pandas as pd
 import numpy as np
-import json
 from sklearn.model_selection import LeaveOneGroupOut
 import seaborn as sns
 import matplotlib.pyplot as plt
 import math
-
-def boolean(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
     
 def read_data(path):
     dataframe = pd.read_csv(path,index_col=0)
