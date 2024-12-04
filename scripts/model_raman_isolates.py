@@ -28,7 +28,6 @@ def read_data(path):
     y = dataframe.iloc[:, [-1]]
     return X, y, groups
 
-
 def main():
     class CustomFormatter(
         argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter
@@ -36,7 +35,7 @@ def main():
         pass
 
     parser = argparse.ArgumentParser(
-        description="Script for training ordinal regression models on preprocessed MALDI-TOF mass spectra (LOOCV)",
+        description="Script for training ordinal regression models on preprocessed Raman spectra (LOOCV), and then testing them on clinical isolate samples.",
         formatter_class=CustomFormatter,
     )
 
@@ -57,9 +56,10 @@ def main():
     X_isolates, y_isolates, groups_isolates = read_data(args.isolates_data_path)
 
 
+
     column_select_on_overlap = np.array([
-        np.isclose(orig_X_time, X_isolates.columns.values.astype(float), atol=1).any()
-        for orig_X_time in X.columns.values.astype(float)
+        x in X_isolates.columns
+        for x in X.columns
     ])
     X = X.iloc[:, column_select_on_overlap]
 
@@ -71,8 +71,8 @@ def main():
     )
 
     param_grid = {
-        "lr": [1, 0.5, 0.1],
-        "epochs": [250, 750],
+        "lr": [1], #[1, 0.5, 0.1],
+        "epochs": [2], #[250, 750],
         "l2": [1e-3, 1e-4],
         "all_labels":  [2**np.arange(np.log2(y.min().item()), np.log2(y.max().item()+1))]
     }

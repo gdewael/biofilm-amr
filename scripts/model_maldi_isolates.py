@@ -28,51 +28,6 @@ def read_data(path):
     y = dataframe.iloc[:, [-1]]
     return X, y, groups
 
-
-def weights_plot(weights, X):
-    fig, axes = plt.subplots(1, 1, figsize=np.array((5,11)))
-
-    t = np.argsort(weights.mean(0))
-    t = np.concatenate([t[:10], t[-10:]])[::-1]
-    weights_filt = weights[:, t]
-
-    sns.barplot(data = list(weights_filt.T), orient = "h", ax = axes, errorbar="sd")
-    axes.set_ylabel('Feature')
-    axes.set_xlabel('Weight')
-    axes.set_yticklabels(X.columns[t])
-    return fig, axes
-
-
-def preds_plot(y_trues, y_preds, param_grid, sample_names):
-    rows = math.ceil(len(y_trues) / 10)
-    cols = 10
-    fig, axes = plt.subplots(rows, cols, sharey = True, sharex = True, figsize=np.array((30,6 + 6*rows/5)))
-
-    n_ = y_preds.shape[1]
-
-    palette = sns.color_palette("rocket", n_colors=n_)[::-1]
-    c = 0
-    for i in range(len(y_trues)):
-        barlist = axes[c // 10, c % 10].bar(np.arange(n_), y_preds[i,:])
-        
-        axes[c // 10, c % 10].set_xticks(np.arange(n_))
-        axes[c // 10, c % 10].set_xticklabels(param_grid["all_labels"][0], rotation=45, ha='right')
-        axes[c // 10, c % 10].set_ylabel('Probability')
-        axes[c // 10, c % 10].set_xlabel('MIC')
-        axes[c // 10, c % 10].set_title(sample_names[i] + "\n" + 'True label: ' +  str(y_trues[i]))
-        axes[c // 10, c % 10].xaxis.set_tick_params(labelbottom=True)
-        axes[c // 10, c % 10].yaxis.set_tick_params(labelleft=True)
-        axes[c // 10, c % 10]
-        location_true = np.where(param_grid["all_labels"][0] == y_trues[i])[0][0]
-        distances_from_true = [np.abs(i - location_true) for i in range(len(param_grid["all_labels"][0]))]
-        
-        for k in range(len(param_grid["all_labels"][0])):
-            barlist[k].set_color(palette[distances_from_true[k]])
-        
-        c += 1 
-    return fig, axes
-
-
 def main():
     class CustomFormatter(
         argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter
