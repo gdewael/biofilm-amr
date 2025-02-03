@@ -40,7 +40,7 @@ def main():
 
     X_isolates, y_isolates, groups_isolates = read_data(args.isolates_data_path)
 
-
+    X_isolates = (X_isolates != 0).astype(int)
 
     column_select_on_overlap = np.array([
         x in X_isolates.columns
